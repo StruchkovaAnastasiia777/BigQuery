@@ -1,0 +1,54 @@
+WITH
+  task_1 AS (
+  SELECT
+    user_pseudo_id AS user_id,
+    event_bundle_sequence_id AS session_id,
+    MAX(
+    IF
+      ( event_params.key = 'session_engaged',event_params.value. int_value,0)) AS session_engaged,
+    SUM(
+    IF
+      (event_params.key = 'engagement_time_msec', event_params.value. int_value,0)) AS engagement_time_msec
+  FROM
+    `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`,
+    UNNEST(event_params) AS event_params
+  WHERE
+    _table_suffix BETWEEN '20200101'
+    AND '20201231'
+  GROUP BY
+    1,
+    2 ),
+  task_2 AS (
+  SELECT
+    user_pseudo_id AS user_id,
+    event_bundle_sequence_id AS session_id,
+    COUNTIF(event_name = 'purchase') > 0 AS made_purchase
+  FROM
+    `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`
+  WHERE
+    _table_suffix BETWEEN '20200101'
+    AND '20201231'
+  GROUP BY
+    1,
+    2 ),
+  combined_task_1_2 AS (
+  SELECT
+    t1.user_id,
+    t1.session_id,
+    t1.session_engaged,
+    t1.engagement_time_msec,
+    CAST(t2.made_purchase AS int64) AS made_purchase
+  FROM
+    task_1 t1
+  LEFT JOIN
+    task_2 t2
+  ON
+    t1.user_id = t2.user_id
+    AND t1.session_id = t2.session_id )
+SELECT
+  CORR(session_engaged,made_purchase) AS corr_engagement_purchase,
+  CORR(engagement_time_msec,made_purchase) AS corr_time_purchase
+FROM
+  combined_task_1_2
+LIMIT
+  1000
