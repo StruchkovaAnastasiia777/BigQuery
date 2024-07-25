@@ -1,0 +1,55 @@
+WITH
+  task_1 AS (
+  SELECT
+    TIMESTAMP_MICROS(event_timestamp ) AS event_timestamp,
+    user_pseudo_id AS user_pseudo_id,
+    event_bundle_sequence_id AS session_id,
+    REGEXP_EXTRACT((
+      SELECT
+        value.string_value
+      FROM
+        UNNEST (event_params)
+      WHERE
+        KEY = 'page_location'), r'^(?:https?://)?(?:[^/]+)(/[^?]*)') AS page_path
+  FROM
+    `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`
+  WHERE
+    _table_suffix BETWEEN '20200101'
+    AND '20201231'
+    AND event_name IN ('session_start') ),
+  task_2 AS (
+  SELECT
+    TIMESTAMP_MICROS(event_timestamp ) AS event_timestamp,
+    user_pseudo_id AS user_pseudo_id,
+    event_bundle_sequence_id AS session_id
+  FROM
+    `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`
+  WHERE
+    _table_suffix BETWEEN '20200101'
+    AND '20201231'
+    AND event_name IN ('purchase') ),
+  combined_data_task1_2 AS (
+  SELECT
+    t1.page_path,
+    COUNT(DISTINCT CONCAT(t1.session_id,t1.user_pseudo_id)) AS unique_sessions,
+    COUNT(DISTINCT CONCAT(t2.session_id,t2.user_pseudo_id)) AS unique_purchases
+  FROM
+    task_1 t1
+  LEFT JOIN
+    task_2 t2
+  ON
+    t1.user_pseudo_id = t2.user_pseudo_id
+    AND t1.session_id = t2.session_id
+  GROUP BY
+    1 )
+SELECT
+  page_path,
+  unique_sessions,
+  unique_purchases,
+  SAFE_DIVIDE(unique_purchases,unique_sessions) AS conversion_rate
+FROM
+  combined_data_task1_2
+ORDER BY
+  2 DESC
+LIMIT
+  1000
